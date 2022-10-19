@@ -1,0 +1,63 @@
+{
+  "name": "Comfoair 2 MQTT",
+  "version": "0.1.0",
+  "slug": "comfoair2mqtt",
+  "description": "Control your Comfoair CA350 over MQTT",
+  "uart": true,
+  "url": "https://github.com/TimWeyand/homeassistant-addon/tree/main/comfoair2mqtt",
+  "startup": "application",
+  "services": [
+    "mqtt:need"
+  ],
+  "arch": [
+    "aarch64",
+    "amd64",
+    "armhf",
+    "armv7",
+    "i386"
+  ],
+  "boot": "auto",
+  "init": false,
+  "timeout": 30,
+  "panel_icon": "mdi:fan",
+  "map": [
+    "share:rw",
+    "config:rw"
+  ],
+  "options": {
+    "mqtt": {},
+    "serial": "/dev/ttyUSB0",
+    "RS485_protocol": false,
+    "refresh_interval": 10,
+    "enablePcMode": true,
+    "debug": false,
+    "HAEnableAutoDiscoverySensors": true,
+    "HAEnableAutoDiscoveryClimate": true,
+    "HAAutoDiscoveryDeviceId": "ca350",
+    "HAAutoDiscoveryDeviceName": "CA350",
+    "HAAutoDiscoveryDeviceManufacturer": "Zehnder",
+    "HAAutoDiscoveryDeviceModel": "ComfoAir 350"
+  },
+  "schema": {
+    "data_path": "str",
+    "serial": "str?",
+    "mqtt": {
+      "host": "str?",
+      "port": "str?",
+      "keepalive": "str?",
+      "user": "str?",
+      "password": "str?"
+    },
+    "RS485_protocol" : "bool?",
+    "refresh_interval" : "int?",
+    "enablePcMode": "bool?",
+    "debug": "bool?",
+    "HAEnableAutoDiscoverySensors": "bool?",
+    "HAEnableAutoDiscoveryClimate": "bool?",
+    "HAAutoDiscoveryDeviceId": "str?",
+    "HAAutoDiscoveryDeviceName": "str?",
+    "HAAutoDiscoveryDeviceManufacturer": "str?",
+    "HAAutoDiscoveryDeviceModel": "str?"
+  },
+  "image": "tweyand/comfoair2mqtt-{arch}"
+}
