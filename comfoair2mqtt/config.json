@@ -1,6 +1,6 @@
 {
   "name": "Comfoair 2 MQTT",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "slug": "comfoair2mqtt",
   "description": "Control your Comfoair CA350 over MQTT",
   "uart": true,
@@ -39,7 +39,6 @@
     "HAAutoDiscoveryDeviceModel": "ComfoAir 350"
   },
   "schema": {
-    "data_path": "str",
     "serial": "str?",
     "mqtt": {
       "host": "str?",
