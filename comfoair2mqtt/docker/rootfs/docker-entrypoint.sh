@@ -88,4 +88,4 @@ HAAutoDiscoveryDeviceModel=$(bashio::config 'HAAutoDiscoveryDeviceModel')
 EOF
 
 bashio::log.info "Startup hacomfoairmqtt"
-python3 /opt/hacomfoairmqtt/src/ca350
+python3 /opt/hacomfoairmqtt/src/ca350.py
