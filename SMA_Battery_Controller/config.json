@@ -41,5 +41,5 @@
     "modbus_interval_in_seconds": "int?",
     "reset_interval_minutes": "int?"
   },
-  "image": "yourdockerhubusername/sma_battery_controller-{arch}"
+  "image": "tweyand/sma_battery_controller-{arch}"
 }
