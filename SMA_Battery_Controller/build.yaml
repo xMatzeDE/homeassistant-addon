@@ -1,0 +1,4 @@
+args:
+  BUILD_FROM: "ghcr.io/home-assistant/${BUILD_ARCH}-base:latest"
+  BUILD_ARCH: "${BUILD_ARCH}"
+  
