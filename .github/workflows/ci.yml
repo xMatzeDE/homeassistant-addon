@@ -25,22 +25,16 @@ jobs:
         arch: ${{ fromJSON(needs.variables.outputs.ARCH_LIST) }}
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Docker login
         run: echo ${{ secrets.DOCKERHUB }} | docker login -u tweyand --password-stdin
 
       - name: Build SMA_Battery_Controller
         run: |
-          # Copy the necessary files for the SMA_Battery_Controller
-          cp -R SMA_Battery_Controller $(pwd)/SMA_Battery_Controller
-          
-          # Navigate into the SMA_Battery_Controller directory
-          cd SMA_Battery_Controller
-          
           # Build the Docker image for SMA_Battery_Controller
           docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7,linux/386 \
             --build-arg BUILD_ARCH=${{ matrix.arch }} \
-            -t yourdockerhubusername/sma_battery_controller:${{ github.sha }} \
+            -t tweyand/sma_battery_controller:${{ github.sha }} \
             --push .
 
       - name: Build comfoair2mqtt
@@ -54,5 +48,5 @@ jobs:
           # Build the Docker image for comfoair2mqtt
           docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7,linux/386 \
             --build-arg BUILD_ARCH=${{ matrix.arch }} \
-            -t yourdockerhubusername/comfoair2mqtt:${{ github.sha }} \
+            -t tweyand/comfoair2mqtt:${{ github.sha }} \
             --push .
