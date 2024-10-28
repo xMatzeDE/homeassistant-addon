@@ -29,24 +29,29 @@ jobs:
       - name: Docker login
         run: echo ${{ secrets.DOCKERHUB }} | docker login -u tweyand --password-stdin
 
-      - name: Build SMA_Battery_Controller
-        run: |
-          # Build the Docker image for SMA_Battery_Controller
-          docker run --rm --privileged \
-            -v /home/runner/.docker:/root/.docker \
-            -v /run/docker.sock:/run/docker.sock:rw \
-            -v $(pwd):/data homeassistant/amd64-builder --${{ matrix.arch }} -t /data
-
       - name: Build comfoair2mqtt
         run: |
-          # Copy the necessary files for comfoair2mqtt
-          cp -R comfoair2mqtt $(pwd)/comfoair2mqtt
-
-          # Navigate into the comfoair2mqtt directory
-          cd comfoair2mqtt/docker  # Adjust path as necessary
+          cp -R comfoair2mqtt/docker/rootfs $(pwd)
+          cp comfoair2mqtt/docker/Dockerfile $(pwd)
+          cp comfoair2mqtt/docker/build.yaml $(pwd)
+          cp comfoair2mqtt/config.json $(pwd)
           
           # Build the Docker image for comfoair2mqtt
            docker run --rm --privileged \
             -v /home/runner/.docker:/root/.docker \
             -v /run/docker.sock:/run/docker.sock:rw \
             -v $(pwd):/data homeassistant/amd64-builder --${{ matrix.arch }} -t /data.
+
+
+      - name: Build SMA_Battery_Controller
+        run: |
+          cp SMA_Battery_Controller/* $(pwd)
+          cp SMA_Battery_Controller/Dockerfile $(pwd)
+          cp SMA_Battery_Controller/build.yaml $(pwd)
+          cp SMA_Battery_Controller/config.json $(pwd)
+          
+          # Build the Docker image for SMA_Battery_Controller
+          docker run --rm --privileged \
+            -v /home/runner/.docker:/root/.docker \
+            -v /run/docker.sock:/run/docker.sock:rw \
+            -v $(pwd):/data homeassistant/amd64-builder --${{ matrix.arch }} -t /data
