@@ -32,10 +32,10 @@ jobs:
       - name: Build SMA_Battery_Controller
         run: |
           # Build the Docker image for SMA_Battery_Controller
-          docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7,linux/386 \
-            --build-arg BUILD_ARCH=${{ matrix.arch }} \
-            -t tweyand/sma_battery_controller:${{ github.sha }} \
-            --push .
+          docker run --rm --privileged \
+            -v /home/runner/.docker:/root/.docker \
+            -v /run/docker.sock:/run/docker.sock:rw \
+            -v $(pwd):/data homeassistant/amd64-builder --${{ matrix.arch }} -t /data
 
       - name: Build comfoair2mqtt
         run: |
@@ -46,7 +46,7 @@ jobs:
           cd comfoair2mqtt/docker  # Adjust path as necessary
           
           # Build the Docker image for comfoair2mqtt
-          docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7,linux/386 \
-            --build-arg BUILD_ARCH=${{ matrix.arch }} \
-            -t tweyand/comfoair2mqtt:${{ github.sha }} \
-            --push .
+           docker run --rm --privileged \
+            -v /home/runner/.docker:/root/.docker \
+            -v /run/docker.sock:/run/docker.sock:rw \
+            -v $(pwd):/data homeassistant/amd64-builder --${{ matrix.arch }} -t /data.
