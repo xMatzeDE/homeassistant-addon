@@ -13,7 +13,7 @@ jobs:
       - name: Determine architectures
         id: determine_arch
         run: |
-          ARCH_LIST=$(jq -r -c '.arch' ./SMA_Battery_Controller/config.json)
+          ARCH_LIST=$(jq -r -c '.arch' ./comfoair2mqtt/config.json)
           echo "Found the following arches: $ARCH_LIST"
           echo "ARCH_LIST=$ARCH_LIST" >> $GITHUB_ENV
 
