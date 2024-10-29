@@ -68,7 +68,7 @@ func loadConfig() {
 	// Load and parse environment variables
 	var err error
 
-	maximumBatteryControl, err = strconv.Atoi(getEnv("MAXIMUM_BATTERY_CONTROL", "5000"))
+	maximumBatteryControl, err = strconv.Atoi(getEnv("MAXIMUM_BATTERY_CONTROL", "6000"))
 	if err != nil {
 		log.Fatalf("Invalid MAXIMUM_BATTERY_CONTROL: %v", err)
 	}
@@ -157,6 +157,8 @@ func publishDiscoveryMessages() {
 	if batteryControl == 0 {
 		batteryControl = int(math.Round(float64(maximumBatteryControl) * 0.90)) // 90% of max control
 		lastValidBatteryControl = batteryControl
+		publishNumber("battery_control", "Battery Control", 0, float64(maximumBatteryControl), 100, float64(batteryControl), deviceInfo)
+	} else {
 		publishNumber("battery_control", "Battery Control", 0, float64(maximumBatteryControl), 100, float64(batteryControl), deviceInfo)
 	}
 
@@ -272,14 +274,14 @@ func setupModbus() {
 
 func modbusReadLoop() {
 	ticker := time.NewTicker(time.Duration(modbusIntervalInSeconds) * time.Second)
-	resetTicker := time.NewTicker(time.Duration(1) * time.Minute) // Check every minute
+	resetTicker := time.NewTicker(time.Duration(resetIntervalMinutes) * time.Minute) // Check every minute
 	for {
 		select {
 		case <-ticker.C:
 			readAndPublishData()
-			applyControlLogic()
 		case <-resetTicker.C:
 			checkAndResetSettings()
+			applyControlLogic()
 		}
 	}
 }
@@ -353,6 +355,7 @@ func applyControlLogic() {
 		// Write control commands to Modbus
 		writeControlCommands(spntCom, pwrAtCom)
 	}
+	readAndPublishData()
 }
 
 func applyMode(mode string, spntCom *uint32, pwrAtCom *int32) {
@@ -434,12 +437,12 @@ func checkAndResetSettings() {
 		if overwriteLogicSelection != "Automatic" {
 			overwriteLogicSelection = "Automatic"
 			stateTopic := fmt.Sprintf("homeassistant/select/%s/overwrite_logic_selection/state", deviceID)
-			mqttPublish(stateTopic, []byte("Automatic"), false)
+			mqttPublish(stateTopic, []byte("Automatic"), true) // Retain the publish
 			if debugEnabled {
 				log.Println("Overwrite Logic Selection reset to 'Automatic' after interval")
 			}
 		}
-		lastChangeTime = time.Now()
+		lastChangeTime = time.Now() // Reset lastChangeTime to current
 	}
 }
 
@@ -515,11 +518,13 @@ func mqttMessageHandler(client mqtt.Client, msg mqtt.Message) {
 			automaticLogicSelection = payload
 			stateTopic := fmt.Sprintf("homeassistant/select/%s/%s/state", deviceID, objectID)
 			mqttPublish(stateTopic, []byte(payload), true)
+			applyControlLogic()
 			lastChangeTime = time.Now()
 		} else if objectID == "overwrite_logic_selection" {
 			overwriteLogicSelection = payload
 			stateTopic := fmt.Sprintf("homeassistant/select/%s/%s/state", deviceID, objectID)
 			mqttPublish(stateTopic, []byte(payload), true)
+			applyControlLogic()
 			lastChangeTime = time.Now()
 		}
 	case "number":
@@ -530,6 +535,7 @@ func mqttMessageHandler(client mqtt.Client, msg mqtt.Message) {
 				lastValidBatteryControl = value
 				stateTopic := fmt.Sprintf("homeassistant/number/%s/%s/state", deviceID, objectID)
 				mqttPublish(stateTopic, []byte(payload), true)
+				applyControlLogic()
 				lastChangeTime = time.Now()
 			} else {
 				// Reset to last valid value
