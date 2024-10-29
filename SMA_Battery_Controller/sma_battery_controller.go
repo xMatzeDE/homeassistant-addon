@@ -279,6 +279,7 @@ func modbusReadLoop() {
 		select {
 		case <-ticker.C:
 			readAndPublishData()
+			checkPauseChargeOkMode()
 		case <-resetTicker.C:
 			checkAndResetSettings()
 			applyControlLogic()
@@ -327,6 +328,18 @@ func readAndPublishData() {
 	}
 }
 
+func checkPauseChargeOkMode() {
+	var currentMode string
+	if overwriteLogicSelection != "Automatic" {
+		currentMode = overwriteLogicSelection
+	} else {
+		currentMode = automaticLogicSelection
+	}
+	if currentMode == "Pause (charge ok)" && !pauseActivated && batteryDischargePower > 0 {
+		applyControlLogic()
+	}
+}
+
 func applyControlLogic() {
 	var spntCom uint32 = 0
 	var pwrAtCom int32 = 0
@@ -339,7 +352,7 @@ func applyControlLogic() {
 	}
 
 	// Only apply control logic if mode has changed or not in "Automatic" mode
-	if currentMode != previousMode || (currentMode != "Automatic" && !(currentMode == "Pause (charge ok)" && !pauseActivated && gridFeed > 0)) {
+	if currentMode != previousMode || (currentMode != "Automatic" && !(currentMode == "Pause (charge ok)" && !pauseActivated && gridFeed > 50 && batteryDischargePower == 0)) {
 		if debugEnabled {
 			log.Printf("Applying control logic: Mode=%s", currentMode)
 		}
@@ -367,7 +380,7 @@ func applyMode(mode string, spntCom *uint32, pwrAtCom *int32) {
 	switch mode {
 	case "Pause (charge ok)":
 		*spntCom = controlOn
-		if gridFeed > 0 {
+		if gridFeed > 100 && batteryDischargePower == 0 {
 			pauseActivated = false
 			// Allow charging up to the specified battery control value
 			*spntCom = controlOff
