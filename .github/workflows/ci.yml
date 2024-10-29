@@ -1,7 +1,6 @@
 name: CI-SMA_Battery_Release
-on:
-  release:
-    types: [published]
+
+on: [push, pull_request]
 
 jobs:
   publish:
