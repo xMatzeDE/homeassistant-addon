@@ -1,57 +1,24 @@
-name: CI-release
-
-on: [push, pull_request, workflow_dispatch]
+name: CI-SMA_Battery_Release
+on:
+  release:
+    types: [published]
 
 jobs:
-  variables:
+  publish:
+    name: Publish
     runs-on: ubuntu-latest
-    outputs:
-      ARCH_LIST: ${{ env.ARCH_LIST }}
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Determine architectures
-        id: determine_arch
-        run: |
-          ARCH_LIST=$(jq -r -c '.arch' ./comfoair2mqtt/config.json)
-          echo "Found the following arches: $ARCH_LIST"
-          echo "ARCH_LIST=$ARCH_LIST" >> $GITHUB_ENV
-
-  build:
-    runs-on: ubuntu-latest
-    needs: variables
-    strategy:
-      matrix:
-        arch: ${{ fromJSON(needs.variables.outputs.ARCH_LIST) }}
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Docker login
-        run: echo ${{ secrets.DOCKERHUB }} | docker login -u tweyand --password-stdin
-
-      - name: Build comfoair2mqtt
-        run: |
-          cp -R comfoair2mqtt/docker/rootfs $(pwd)
-          cp comfoair2mqtt/docker/Dockerfile $(pwd)
-          cp comfoair2mqtt/docker/build.yaml $(pwd)
-          cp comfoair2mqtt/config.json $(pwd)
-          
-          # Build the Docker image for comfoair2mqtt
-           docker run --rm --privileged \
-            -v /home/runner/.docker:/root/.docker \
-            -v /run/docker.sock:/run/docker.sock:rw \
-            -v $(pwd):/data homeassistant/amd64-builder --${{ matrix.arch }} -t /data.
-
-
-      - name: Build SMA_Battery_Controller
-        run: |
-          cp SMA_Battery_Controller/* $(pwd)
-          cp SMA_Battery_Controller/Dockerfile $(pwd)
-          cp SMA_Battery_Controller/build.yaml $(pwd)
-          cp SMA_Battery_Controller/config.json $(pwd)
-          
-          # Build the Docker image for SMA_Battery_Controller
-          docker run --rm --privileged \
-            -v /home/runner/.docker:/root/.docker \
-            -v /run/docker.sock:/run/docker.sock:rw \
-            -v $(pwd):/data homeassistant/amd64-builder --${{ matrix.arch }} -t /data
+      - name: Checkout the repository
+        uses: actions/checkout@v3
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish
+        uses: home-assistant/builder@master
+        with:
+          args: |
+            --all \
+            --target SMA_Battery_Controller \
+            --docker-hub tweyand
