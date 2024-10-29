@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -28,8 +29,13 @@ var (
 	batteryChargePower      int
 	previousMode            string
 	deviceID                string
-	resetIntervalMinutes    int       // New variable for reset interval
-	lastChangeTime          time.Time // Tracks the last time settings were changed
+	resetIntervalMinutes    int       // Reset interval
+	lastChangeTime          time.Time // Last change timestamp
+	initialValuesLoaded     bool      // Track if values are loaded
+	acPower                 int
+	gridDraw                int
+	gridFeed                int
+	pauseActivated          bool
 )
 
 func main() {
@@ -38,6 +44,9 @@ func main() {
 
 	// Set up MQTT client
 	setupMQTT()
+
+	// Load initial settings from MQTT
+	loadInitialSettings()
 
 	// Publish MQTT discovery messages
 	publishDiscoveryMessages()
@@ -84,7 +93,6 @@ func loadConfig() {
 	// Initialize control variables
 	automaticLogicSelection = "Automatic"
 	overwriteLogicSelection = "Automatic"
-	batteryControl = 0
 	lastValidBatteryControl = 0
 	previousMode = ""
 	lastChangeTime = time.Now()
@@ -137,12 +145,22 @@ func publishDiscoveryMessages() {
 		"name":         "SMA Battery Controller",
 	}
 
-	// Publish entities
-	publishSelect("automatic_logic_selection", "Automatic Logic Selection", []string{"Automatic", "Pause (charge ok)", "Pause", "Charge Battery", "Discharge Battery"}, automaticLogicSelection, deviceInfo)
-	publishSelect("overwrite_logic_selection", "Overwrite Logic Selection", []string{"Automatic", "Pause (charge ok)", "Pause", "Charge Battery", "Discharge Battery"}, overwriteLogicSelection, deviceInfo)
-	publishNumber("battery_control", "Battery Control", 0, float64(maximumBatteryControl), 100, float64(batteryControl), deviceInfo)
+	// Publish entities only if defaults are still in use
+	if automaticLogicSelection == "Automatic" {
+		publishSelect("automatic_logic_selection", "Automatic Logic Selection", []string{"Automatic", "Pause (charge ok)", "Pause", "Charge Battery", "Discharge Battery"}, automaticLogicSelection, deviceInfo)
+	}
 
-	// Publish sensors
+	if overwriteLogicSelection == "Automatic" {
+		publishSelect("overwrite_logic_selection", "Overwrite Logic Selection", []string{"Automatic", "Pause (charge ok)", "Pause", "Charge Battery", "Discharge Battery"}, overwriteLogicSelection, deviceInfo)
+	}
+
+	if batteryControl == 0 {
+		batteryControl = int(math.Round(float64(maximumBatteryControl) * 0.90)) // 90% of max control
+		lastValidBatteryControl = batteryControl
+		publishNumber("battery_control", "Battery Control", 0, float64(maximumBatteryControl), 100, float64(batteryControl), deviceInfo)
+	}
+
+	// Publish sensors regardless of initial state
 	publishSensor("battery_soc", "Battery State of Charge", "%", deviceInfo)
 	publishSensor("battery_charge_power", "Battery Charge Power", "W", deviceInfo)
 	publishSensor("battery_discharge_power", "Battery Discharge Power", "W", deviceInfo)
@@ -293,6 +311,12 @@ func readAndPublishData() {
 			batteryDischargePower = int(value)
 		case "battery_charge_power":
 			batteryChargePower = int(value)
+		case "ac_power":
+			acPower = int(value)
+		case "grid_feed":
+			gridFeed = int(value)
+		case "grid_draw":
+			gridDraw = int(value)
 		}
 
 		// Publish to MQTT
@@ -313,7 +337,7 @@ func applyControlLogic() {
 	}
 
 	// Only apply control logic if mode has changed or not in "Automatic" mode
-	if currentMode != previousMode || currentMode != "Automatic" {
+	if currentMode != previousMode || (currentMode != "Automatic" && !(currentMode == "Pause (charge ok)" && !pauseActivated && gridFeed > 0)) {
 		if debugEnabled {
 			log.Printf("Applying control logic: Mode=%s", currentMode)
 		}
@@ -340,29 +364,36 @@ func applyMode(mode string, spntCom *uint32, pwrAtCom *int32) {
 	switch mode {
 	case "Pause (charge ok)":
 		*spntCom = controlOn
-		if batteryDischargePower > 0 {
-			// Battery is discharging, pause battery
+		if gridFeed > 0 {
+			pauseActivated = false
+			// Allow charging up to the specified battery control value
+			*spntCom = controlOff
+			*pwrAtCom = 0
+			if debugEnabled {
+				log.Println("We are supplying Power, disable control")
+			}
+		} else {
+			pauseActivated = true
+			// if we supply energy to the grid, turn on charging
 			*pwrAtCom = 0
 			if debugEnabled {
 				log.Println("Battery is discharging, setting power command to 0W")
 			}
-		} else {
-			// Allow charging up to the specified battery control value
-			*pwrAtCom = -int32(batteryControl)
-			if debugEnabled {
-				log.Println("Battery is not discharging, allowing charging at", -batteryControl, "W")
-			}
 		}
 	case "Pause":
+		pauseActivated = true
 		*spntCom = controlOn
 		*pwrAtCom = 0
 	case "Charge Battery":
+		pauseActivated = false
 		*spntCom = controlOn
 		*pwrAtCom = -int32(batteryControl)
 	case "Discharge Battery":
+		pauseActivated = false
 		*spntCom = controlOn
 		*pwrAtCom = int32(batteryControl)
 	default: // Automatic
+		pauseActivated = false
 		*spntCom = controlOff
 		*pwrAtCom = 0
 	}
@@ -412,6 +443,52 @@ func checkAndResetSettings() {
 	}
 }
 
+func loadInitialSettings() {
+	mqttClient.Subscribe("homeassistant/select/sma_battery_controller/automatic_logic_selection/state", 0, func(client mqtt.Client, msg mqtt.Message) {
+		automaticLogicSelection = string(msg.Payload())
+		if debugEnabled {
+			log.Printf("Loaded automatic_logic_selection from MQTT: %s", automaticLogicSelection)
+		}
+	})
+
+	mqttClient.Subscribe("homeassistant/select/sma_battery_controller/overwrite_logic_selection/state", 0, func(client mqtt.Client, msg mqtt.Message) {
+		overwriteLogicSelection = string(msg.Payload())
+		if debugEnabled {
+			log.Printf("Loaded overwrite_logic_selection from MQTT: %s", overwriteLogicSelection)
+		}
+	})
+
+	mqttClient.Subscribe("homeassistant/number/sma_battery_controller/battery_control/state", 0, func(client mqtt.Client, msg mqtt.Message) {
+		value, err := strconv.Atoi(string(msg.Payload()))
+		if err == nil {
+			batteryControl = value
+			lastValidBatteryControl = value
+		}
+		if debugEnabled {
+			log.Printf("Loaded battery_control from MQTT: %d", batteryControl)
+		}
+	})
+
+	// bad work around for racecondition problem
+	// Delay to allow initial values to load
+	time.Sleep(500 * time.Millisecond) // Wait for subscriptions to take effect
+
+	// Set defaults if no values are loaded
+	if automaticLogicSelection == "" {
+		automaticLogicSelection = "Automatic"
+	}
+	if overwriteLogicSelection == "" {
+		overwriteLogicSelection = "Automatic"
+	}
+	if batteryControl == 0 {
+		// Set default battery control to 90% of maximumBatteryControl
+		batteryControl = int(math.Round(float64(maximumBatteryControl) * 0.90))
+		lastValidBatteryControl = batteryControl
+	}
+
+	initialValuesLoaded = true // Mark that initial values have been loaded
+}
+
 func mqttMessageHandler(client mqtt.Client, msg mqtt.Message) {
 	topicLevels := strings.Split(msg.Topic(), "/")
 	if len(topicLevels) < 5 {
@@ -437,12 +514,12 @@ func mqttMessageHandler(client mqtt.Client, msg mqtt.Message) {
 		if objectID == "automatic_logic_selection" {
 			automaticLogicSelection = payload
 			stateTopic := fmt.Sprintf("homeassistant/select/%s/%s/state", deviceID, objectID)
-			mqttPublish(stateTopic, []byte(payload), false)
+			mqttPublish(stateTopic, []byte(payload), true)
 			lastChangeTime = time.Now()
 		} else if objectID == "overwrite_logic_selection" {
 			overwriteLogicSelection = payload
 			stateTopic := fmt.Sprintf("homeassistant/select/%s/%s/state", deviceID, objectID)
-			mqttPublish(stateTopic, []byte(payload), false)
+			mqttPublish(stateTopic, []byte(payload), true)
 			lastChangeTime = time.Now()
 		}
 	case "number":
@@ -452,12 +529,12 @@ func mqttMessageHandler(client mqtt.Client, msg mqtt.Message) {
 				batteryControl = value
 				lastValidBatteryControl = value
 				stateTopic := fmt.Sprintf("homeassistant/number/%s/%s/state", deviceID, objectID)
-				mqttPublish(stateTopic, []byte(payload), false)
+				mqttPublish(stateTopic, []byte(payload), true)
 				lastChangeTime = time.Now()
 			} else {
 				// Reset to last valid value
 				stateTopic := fmt.Sprintf("homeassistant/number/%s/%s/state", deviceID, objectID)
-				mqttPublish(stateTopic, []byte(strconv.Itoa(lastValidBatteryControl)), false)
+				mqttPublish(stateTopic, []byte(strconv.Itoa(lastValidBatteryControl)), true)
 				if debugEnabled {
 					log.Printf("Invalid battery control value: %s. Resetting to last valid value: %d", payload, lastValidBatteryControl)
 				}
