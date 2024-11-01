@@ -281,7 +281,6 @@ func modbusReadLoop() {
 			readAndPublishData()
 			checkPauseChargeOkMode()
 		case <-resetTicker.C:
-			checkAndResetSettings()
 			applyControlLogic()
 		}
 	}
@@ -440,22 +439,6 @@ func writeControlCommands(spntCom uint32, pwrAtCom int32) {
 	}
 	if debugEnabled {
 		log.Printf("Control command sent: SpntCom=%d, PwrAtCom=%d", spntCom, pwrAtCom)
-	}
-}
-
-func checkAndResetSettings() {
-	durationSinceLastChange := time.Since(lastChangeTime)
-	if durationSinceLastChange >= time.Duration(resetIntervalMinutes)*time.Minute {
-		// Reset the Overwrite Logic Selection to "Automatic"
-		if overwriteLogicSelection != "Automatic" {
-			overwriteLogicSelection = "Automatic"
-			stateTopic := fmt.Sprintf("homeassistant/select/%s/overwrite_logic_selection/state", deviceID)
-			mqttPublish(stateTopic, []byte("Automatic"), true) // Retain the publish
-			if debugEnabled {
-				log.Println("Overwrite Logic Selection reset to 'Automatic' after interval")
-			}
-		}
-		lastChangeTime = time.Now() // Reset lastChangeTime to current
 	}
 }
 
