@@ -175,9 +175,19 @@ func publishDiscoveryMessages() {
 	}
 
 	// Publish sensors regardless of initial state
+	publishSensor("battery_status", "Battery Status", "", deviceInfo)
 	publishSensor("battery_soc", "Battery State of Charge", "%", deviceInfo)
+	publishSensor("battery_temperature", "Battery Temperature", "°C", deviceInfo)
+	publishSensor("inverter_temperature", "Inverter Temperature", "°C", deviceInfo)
+	publishSensor("battery_diagnose_current_capacity", "Battery Health", "%", deviceInfo)
 	publishSensor("battery_charge_power", "Battery Charge Power", "W", deviceInfo)
 	publishSensor("battery_discharge_power", "Battery Discharge Power", "W", deviceInfo)
+	publishSensor("dc1_current", "DC1 Current", "A", deviceInfo)
+	publishSensor("dc1_voltage", "DC1 Voltage", "V", deviceInfo)
+	publishSensor("dc1_power", "DC1 Power", "W", deviceInfo)
+	publishSensor("dc2_current", "DC1 Current", "A", deviceInfo)
+	publishSensor("dc2_voltage", "DC1 Voltage", "V", deviceInfo)
+	publishSensor("dc2_power", "DC1 Power", "W", deviceInfo)
 	publishSensor("ac_power", "AC Power", "W", deviceInfo)
 	publishSensor("grid_feed", "Grid Feed Power", "W", deviceInfo)
 	publishSensor("grid_draw", "Grid Draw Power", "W", deviceInfo)
@@ -308,12 +318,22 @@ func modbusReadLoop() {
 func readAndPublishData() {
 	// Define Modbus input register addresses
 	registers := map[string]uint16{
-		"battery_soc":             30845,
-		"battery_charge_power":    31393,
-		"battery_discharge_power": 31395,
-		"ac_power":                30775,
-		"grid_feed":               30867,
-		"grid_draw":               30865,
+		"battery_status":                    31391,
+		"battery_soc":                       30845,
+		"battery_temperature":               30849,
+		"battery_diagnose_current_capacity": 30847,
+		"battery_charge_power":              31393,
+		"battery_discharge_power":           31395,
+		"dc1_current":                       30769,
+		"dc1_voltage":                       30771,
+		"dc1_power":                         30773,
+		"dc2_current":                       30957,
+		"dc2_voltage":                       30959,
+		"dc2_power":                         30961,
+		"ac_power":                          30775,
+		"grid_feed":                         30867,
+		"grid_draw":                         30865,
+		"inverter_temperature":              30953,
 	}
 
 	for key, address := range registers {
@@ -330,24 +350,52 @@ func readAndPublishData() {
 			continue
 		}
 		value := int32(binary.BigEndian.Uint32(result))
+		valueFloat := float32(value)
 
 		// Update control variables
 		switch key {
+		case "dc1_current":
+			valueFloat = valueFloat * .001
+			break
+		case "dc2_current":
+			valueFloat = valueFloat * .001
+			break
+		case "dc1_voltage":
+			valueFloat = valueFloat * .01
+			break
+		case "dc2_voltage":
+			valueFloat = valueFloat * .01
+			break
+		case "battery_temperature":
+			valueFloat = valueFloat * .1
+			break
+		case "inverter_temperature":
+			valueFloat = valueFloat * .01
+			break
 		case "battery_discharge_power":
 			batteryDischargePower = int(value)
+			break
 		case "battery_charge_power":
 			batteryChargePower = int(value)
+			break
 		case "ac_power":
 			acPower = int(value)
+			break
 		case "grid_feed":
 			gridFeed = int(value)
+			break
 		case "grid_draw":
 			gridDraw = int(value)
+			break
 		}
 
 		// Publish to MQTT
 		stateTopic := fmt.Sprintf("homeassistant/sensor/%s/%s/state", deviceID, key)
-		mqttPublish(stateTopic, []byte(fmt.Sprintf("%d", value)), false)
+		if int32(valueFloat) != value {
+			mqttPublish(stateTopic, []byte(fmt.Sprintf("%f", valueFloat)), false)
+		} else {
+			mqttPublish(stateTopic, []byte(fmt.Sprintf("%d", value)), false)
+		}
 	}
 
 	// Publish to MQTT

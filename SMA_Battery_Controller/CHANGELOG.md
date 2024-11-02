@@ -1,6 +1,19 @@
 # Changelog
 **Warning:** This is not an official add-on and is not affiliated with SMA. Use at your own risk. This software is experimental.
 
+## 0.0.7
+- added some more sensors
+  - battery_temperature
+  - inverter_temperature
+  - battery_health
+  - battery_status
+  - dc1_current
+  - dc1_voltage
+  - dc1_power
+  - dc2_current
+  - dc2_voltage
+  - dc2_power
+
 ## 0.0.6
 - Add currentLogicSelection to see the current active Modus
 - Check for broken pipe at modbus connection (also monitor count / time)
