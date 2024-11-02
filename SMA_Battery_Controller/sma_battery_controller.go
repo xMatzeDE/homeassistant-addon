@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -18,11 +20,14 @@ import (
 var (
 	mqttClient              mqtt.Client
 	modbusClient            modbus.Client
+	modbusClientErrorCount  int
+	modbusClientErrorTime   time.Time
 	maximumBatteryControl   int
 	modbusIntervalInSeconds int
 	debugEnabled            bool
 	automaticLogicSelection string
 	overwriteLogicSelection string
+	currentLogicSelection   string
 	batteryControl          int
 	lastValidBatteryControl int
 	batteryDischargePower   int
@@ -39,6 +44,9 @@ var (
 )
 
 func main() {
+	modbusClientErrorCount = 0
+	modbusClientErrorTime = time.Now()
+
 	// Load environment variables
 	loadConfig()
 
@@ -58,7 +66,8 @@ func main() {
 	go modbusReadLoop()
 
 	// Listen for MQTT messages
-	mqttClient.Subscribe("homeassistant/+/sma_battery_controller/+/set", 0, mqttMessageHandler)
+	listenTopic := fmt.Sprintf("homeassistant/+/%s/+/set", deviceID)
+	mqttClient.Subscribe(listenTopic, 0, mqttMessageHandler)
 
 	// Keep the application running
 	select {}
@@ -88,11 +97,12 @@ func loadConfig() {
 		resetIntervalMinutes = 5
 	}
 
-	deviceID = "sma_battery_controller"
+	deviceID = getEnv("DEVICE_ID", "sma_battery_controller")
 
 	// Initialize control variables
 	automaticLogicSelection = "Automatic"
-	overwriteLogicSelection = "Automatic"
+	overwriteLogicSelection = "Off"
+	currentLogicSelection = "Automatic"
 	lastValidBatteryControl = 0
 	previousMode = ""
 	lastChangeTime = time.Now()
@@ -151,8 +161,10 @@ func publishDiscoveryMessages() {
 	}
 
 	if overwriteLogicSelection == "Automatic" {
-		publishSelect("overwrite_logic_selection", "Overwrite Logic Selection", []string{"Automatic", "Pause (charge ok)", "Pause", "Charge Battery", "Discharge Battery"}, overwriteLogicSelection, deviceInfo)
+		publishSelect("overwrite_logic_selection", "Overwrite Logic Selection", []string{"Off", "Automatic", "Pause (charge ok)", "Pause", "Charge Battery", "Discharge Battery"}, overwriteLogicSelection, deviceInfo)
 	}
+
+	publishSelect("current_logic_selection", "Current Logic Selection", []string{"Automatic", "Pause (charge ok)", "Pause", "Charge Battery", "Discharge Battery"}, currentLogicSelection, deviceInfo)
 
 	if batteryControl == 0 {
 		batteryControl = int(math.Round(float64(maximumBatteryControl) * 0.90)) // 90% of max control
@@ -169,6 +181,7 @@ func publishDiscoveryMessages() {
 	publishSensor("ac_power", "AC Power", "W", deviceInfo)
 	publishSensor("grid_feed", "Grid Feed Power", "W", deviceInfo)
 	publishSensor("grid_draw", "Grid Draw Power", "W", deviceInfo)
+	publishSensor("modbus_error_count", "Modbus Error Count", "", deviceInfo)
 }
 
 func publishSelect(objectID, name string, options []string, initial string, deviceInfo map[string]interface{}) {
@@ -255,6 +268,12 @@ func publishSensor(objectID, name, unit string, deviceInfo map[string]interface{
 }
 
 func setupModbus() {
+	currentTime := time.Now()
+	timeDiff := currentTime.Sub(modbusClientErrorTime)
+	if timeDiff > 30*time.Minute {
+		modbusClientErrorCount = 0
+	}
+
 	// Create Modbus TCP client handler
 	handler := modbus.NewTCPClientHandler(
 		fmt.Sprintf("%s:%s",
@@ -303,6 +322,11 @@ func readAndPublishData() {
 			if debugEnabled {
 				log.Printf("Error reading %s register: %v", key, err)
 			}
+			modbusClientErrorCount++
+			modbusClientErrorTime = time.Now()
+			if errors.Is(err, syscall.EPIPE) && modbusClientErrorCount < 5 {
+				setupModbus()
+			}
 			continue
 		}
 		value := int32(binary.BigEndian.Uint32(result))
@@ -325,11 +349,15 @@ func readAndPublishData() {
 		stateTopic := fmt.Sprintf("homeassistant/sensor/%s/%s/state", deviceID, key)
 		mqttPublish(stateTopic, []byte(fmt.Sprintf("%d", value)), false)
 	}
+
+	// Publish to MQTT
+	stateTopic := fmt.Sprintf("homeassistant/sensor/%s/%s/state", deviceID, "modbus_error_count")
+	mqttPublish(stateTopic, []byte(fmt.Sprintf("%d", modbusClientErrorCount)), false)
 }
 
 func checkPauseChargeOkMode() {
 	var currentMode string
-	if overwriteLogicSelection != "Automatic" {
+	if overwriteLogicSelection != "Off" {
 		currentMode = overwriteLogicSelection
 	} else {
 		currentMode = automaticLogicSelection
@@ -344,17 +372,23 @@ func applyControlLogic() {
 	var pwrAtCom int32 = 0
 	var currentMode string
 
-	if overwriteLogicSelection != "Automatic" {
+	if overwriteLogicSelection != "Off" {
 		currentMode = overwriteLogicSelection
 	} else {
 		currentMode = automaticLogicSelection
 	}
 
+	if currentMode != currentLogicSelection {
+		currentLogicSelection = currentMode
+		stateTopic := fmt.Sprintf("homeassistant/select/%s/current_logic_selection/state", deviceID)
+		mqttPublish(stateTopic, []byte(currentLogicSelection), true)
+	}
+
 	// Only apply control logic if mode has changed or not in "Automatic" mode
 	if currentMode != previousMode || (currentMode != "Automatic" && !(currentMode == "Pause (charge ok)" && !pauseActivated && gridFeed > 50 && batteryDischargePower == 0)) {
-		if debugEnabled {
-			log.Printf("Applying control logic: Mode=%s", currentMode)
-		}
+		//if debugEnabled {
+		log.Printf("Applying control logic: Mode=%s", currentMode)
+		//}
 		applyMode(currentMode, &spntCom, &pwrAtCom)
 	} else {
 		// In "Automatic" mode and mode has not changed, do not send commands
@@ -423,6 +457,11 @@ func writeControlCommands(spntCom uint32, pwrAtCom int32) {
 	_, err := modbusClient.WriteMultipleRegisters(40151, 2, spntComData)
 	if err != nil {
 		log.Printf("Error writing to register 40151: %v", err)
+		modbusClientErrorCount++
+		modbusClientErrorTime = time.Now()
+		if errors.Is(err, syscall.EPIPE) && modbusClientErrorCount < 5 {
+			setupModbus()
+		}
 		return
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -435,6 +474,11 @@ func writeControlCommands(spntCom uint32, pwrAtCom int32) {
 	_, err = modbusClient.WriteMultipleRegisters(40149, 2, pwrAtComData)
 	if err != nil {
 		log.Printf("Error writing to register 40149: %v", err)
+		modbusClientErrorCount++
+		modbusClientErrorTime = time.Now()
+		if errors.Is(err, syscall.EPIPE) && modbusClientErrorCount < 5 {
+			setupModbus()
+		}
 		return
 	}
 	if debugEnabled {
@@ -443,21 +487,24 @@ func writeControlCommands(spntCom uint32, pwrAtCom int32) {
 }
 
 func loadInitialSettings() {
-	mqttClient.Subscribe("homeassistant/select/sma_battery_controller/automatic_logic_selection/state", 0, func(client mqtt.Client, msg mqtt.Message) {
+	stateTopic := fmt.Sprintf("homeassistant/select/%s/automatic_logic_selection/state", deviceID)
+	mqttClient.Subscribe(stateTopic, 0, func(client mqtt.Client, msg mqtt.Message) {
 		automaticLogicSelection = string(msg.Payload())
 		if debugEnabled {
 			log.Printf("Loaded automatic_logic_selection from MQTT: %s", automaticLogicSelection)
 		}
 	})
 
-	mqttClient.Subscribe("homeassistant/select/sma_battery_controller/overwrite_logic_selection/state", 0, func(client mqtt.Client, msg mqtt.Message) {
+	stateTopic = fmt.Sprintf("homeassistant/select/%s/overwrite_logic_selection/state", deviceID)
+	mqttClient.Subscribe(stateTopic, 0, func(client mqtt.Client, msg mqtt.Message) {
 		overwriteLogicSelection = string(msg.Payload())
 		if debugEnabled {
 			log.Printf("Loaded overwrite_logic_selection from MQTT: %s", overwriteLogicSelection)
 		}
 	})
 
-	mqttClient.Subscribe("homeassistant/number/sma_battery_controller/battery_control/state", 0, func(client mqtt.Client, msg mqtt.Message) {
+	stateTopic = fmt.Sprintf("homeassistant/number/%s/battery_control/state", deviceID)
+	mqttClient.Subscribe(stateTopic, 0, func(client mqtt.Client, msg mqtt.Message) {
 		value, err := strconv.Atoi(string(msg.Payload()))
 		if err == nil {
 			batteryControl = value
@@ -477,7 +524,7 @@ func loadInitialSettings() {
 		automaticLogicSelection = "Automatic"
 	}
 	if overwriteLogicSelection == "" {
-		overwriteLogicSelection = "Automatic"
+		overwriteLogicSelection = "Off"
 	}
 	if batteryControl == 0 {
 		// Set default battery control to 90% of maximumBatteryControl
@@ -517,6 +564,12 @@ func mqttMessageHandler(client mqtt.Client, msg mqtt.Message) {
 			applyControlLogic()
 			lastChangeTime = time.Now()
 		} else if objectID == "overwrite_logic_selection" {
+			overwriteLogicSelection = payload
+			stateTopic := fmt.Sprintf("homeassistant/select/%s/%s/state", deviceID, objectID)
+			mqttPublish(stateTopic, []byte(payload), true)
+			applyControlLogic()
+			lastChangeTime = time.Now()
+		} else if objectID == "current_logic_selection" {
 			overwriteLogicSelection = payload
 			stateTopic := fmt.Sprintf("homeassistant/select/%s/%s/state", deviceID, objectID)
 			mqttPublish(stateTopic, []byte(payload), true)

@@ -1,5 +1,5 @@
 name: SMA Battery Controller
-version: 0.0.5
+version: 0.0.6
 slug: sma_battery_controller
 description: Control SMA Sunny Tripower SE 10 inverter over Modbus via MQTT
 arch:
@@ -21,6 +21,7 @@ options:
   debug_enabled: true
   modbus_interval_in_seconds: 5
   reset_interval_minutes: 5
+  device_id: sma_battery_controller
 schema:
   mqtt_server_address: str
   mqtt_server_port: int
@@ -32,3 +33,4 @@ schema:
   debug_enabled: bool
   modbus_interval_in_seconds: int
   reset_interval_minutes: int
+  device_id: str

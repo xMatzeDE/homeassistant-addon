@@ -11,6 +11,7 @@ export MAXIMUM_BATTERY_CONTROL=$(bashio::config 'maximum_battery_control')
 export DEBUG_ENABLED=$(bashio::config 'debug_enabled')
 export MODBUS_INTERVAL_IN_SECONDS=$(bashio::config 'modbus_interval_in_seconds')
 export RESET_INTERVAL_MINUTES=$(bashio::config 'reset_interval_minutes')
+export DEVICE_ID=$(bashio::config 'device_id')
 
 # Run the Go application
 exec /sma_battery_controller
