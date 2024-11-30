@@ -3,14 +3,12 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"math"
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -278,12 +276,7 @@ func publishSensor(objectID, name, unit string, deviceInfo map[string]interface{
 }
 
 func setupModbus() {
-	currentTime := time.Now()
-	timeDiff := currentTime.Sub(modbusClientErrorTime)
-	if timeDiff > 30*time.Minute {
-		modbusClientErrorCount = 0
-	}
-
+	log.Printf("Setting up modbus")
 	// Create Modbus TCP client handler
 	handler := modbus.NewTCPClientHandler(
 		fmt.Sprintf("%s:%s",
@@ -299,6 +292,11 @@ func setupModbus() {
 		log.Fatalf("Modbus connection error: %v", err)
 	}
 	modbusClient = modbus.NewClient(handler)
+	currentTime := time.Now()
+	timeDiff := currentTime.Sub(modbusClientErrorTime)
+	if timeDiff > 30*time.Minute {
+		modbusClientErrorCount = 0
+	}
 }
 
 func modbusReadLoop() {
@@ -344,8 +342,13 @@ func readAndPublishData() {
 			}
 			modbusClientErrorCount++
 			modbusClientErrorTime = time.Now()
-			if errors.Is(err, syscall.EPIPE) && modbusClientErrorCount < 5 {
+			if modbusClientErrorCount < 20 {
+				log.Printf("Trying to reconnect because of %v", err)
+				time.Sleep(30 * time.Second)
 				setupModbus()
+			} else if modbusClientErrorCount > 20 {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
 			}
 			continue
 		}
@@ -507,8 +510,11 @@ func writeControlCommands(spntCom uint32, pwrAtCom int32) {
 		log.Printf("Error writing to register 40151: %v", err)
 		modbusClientErrorCount++
 		modbusClientErrorTime = time.Now()
-		if errors.Is(err, syscall.EPIPE) && modbusClientErrorCount < 5 {
+		if modbusClientErrorCount < 5 {
+			time.Sleep(30 * time.Second)
 			setupModbus()
+		} else {
+			log.Fatalf("To many modbus errors, have to terminate %v", err)
 		}
 		return
 	}
@@ -524,8 +530,11 @@ func writeControlCommands(spntCom uint32, pwrAtCom int32) {
 		log.Printf("Error writing to register 40149: %v", err)
 		modbusClientErrorCount++
 		modbusClientErrorTime = time.Now()
-		if errors.Is(err, syscall.EPIPE) && modbusClientErrorCount < 5 {
+		if modbusClientErrorCount < 5 {
+			time.Sleep(30 * time.Second)
 			setupModbus()
+		} else {
+			log.Fatalf("To many modbus errors, have to terminate %v", err)
 		}
 		return
 	}
