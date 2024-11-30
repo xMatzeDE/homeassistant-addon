@@ -1,6 +1,9 @@
 # Changelog
 **Warning:** This is not an official add-on and is not affiliated with SMA. Use at your own risk. This software is experimental.
 
+## 0.0.8
+- trying to optimize reconnect
+
 ## 0.0.7
 - added some more sensors
   - battery_temperature
