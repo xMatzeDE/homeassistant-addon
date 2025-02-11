@@ -50,6 +50,12 @@ else
   export COMFOAIR2MQTT_CONFIG_debug="False";
 fi
 
+if bashio::var.true $(bashio::config 'SetUpFanLevelsAtStart'); then
+  export COMFOAIR2MQTT_CONFIG_SetUpFanLevelsAtStart="True";
+else
+  export COMFOAIR2MQTT_CONFIG_SetUpFanLevelsAtStart="False";
+fi
+
 if bashio::var.true $(bashio::config 'HAEnableAutoDiscoverySensors'); then
   export COMFOAIR2MQTT_CONFIG_DiscoverySensor="True";
 else
@@ -72,14 +78,14 @@ enablePcMode=$COMFOAIR2MQTT_CONFIG_PCMode
 debug=$COMFOAIR2MQTT_CONFIG_debug
 
 [DEVICE]
-FanOutAbsent=$COMFOAIR2MQTT_CONFIG_FanOutAbsent
-FanOutLow=$COMFOAIR2MQTT_CONFIG_FanOutLow
-FanOutMid=$COMFOAIR2MQTT_CONFIG_FanOutMid
-FanOutHigh=$COMFOAIR2MQTT_CONFIG_FanOutHigh
-FanInAbsent=$COMFOAIR2MQTT_CONFIG_FanInAbsent
-FanInLow=$COMFOAIR2MQTT_CONFIG_FanInLow
-FanInMid=$COMFOAIR2MQTT_CONFIG_FanInMid
-FanInHigh=$COMFOAIR2MQTT_CONFIG_FanInHigh
+FanOutAbsent=$(bashio::config 'FanOutAbsent')
+FanOutLow=$(bashio::config 'FanOutLow')
+FanOutMid=$(bashio::config 'FanOutMid')
+FanOutHigh=$(bashio::config 'FanOutHigh')
+FanInAbsent=$(bashio::config 'FanInAbsent')
+FanInLow=$(bashio::config 'FanInLow')
+FanInMid=$(bashio::config 'FanInMid')
+FanInHigh=$(bashio::config 'FanInHigh')
 SetUpFanLevelsAtStart=$COMFOAIR2MQTT_CONFIG_SetUpFanLevelsAtStart
 
 [MQTT]
