@@ -4,7 +4,7 @@
   "slug": "comfoair2mqtt",
   "description": "Control your Comfoair CA350 over MQTT",
   "uart": true,
-  "url": "https://github.com/TimWeyand/homeassistant-addon/tree/main/comfoair2mqtt",
+  "url": "https://github.com/xMatze/homeassistant-addon/tree/main/comfoair2mqtt",
   "startup": "application",
   "services": [
     "mqtt:need"
@@ -76,5 +76,5 @@
     "HAAutoDiscoveryDeviceManufacturer": "str?",
     "HAAutoDiscoveryDeviceModel": "str?"
   },
-  "image": "tweyand/comfoair2mqtt-{arch}"
+  "image": "marenskoetter/comfoair2mqtt-{arch}"
 }
